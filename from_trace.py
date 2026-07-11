@@ -1,6 +1,7 @@
 """This script will apply the position at the time the picture wa taken """
 
-import exif
+from PIL import Image
+import piexif
 import os
 import gpx
 import datetime as dt
@@ -13,6 +14,10 @@ GPX_FILE = "activity.gpx"
 # so, if a position exists at less than EPSILON seconds of its taken time, it will be 
 # considered valid, otherwise not. If None, there is no limit
 EPSILON = dt.timedelta(minutes=1)
+# the minutes the camera has on the real time
+TIME_ADVANCE = dt.timedelta(minutes=7)
+
+CAMERA_TIMEZONE = "Europe/Paris"
 
 
 def get_all_pictures(formats: list) -> list:
@@ -47,6 +52,7 @@ def get_closest_pos(positions: list, time: dt) -> dict:
     The positions must be sorted by ascendent time
     
     TODO : implement dichotomic search to speed up
+    TODO : check if the picture was taken in the interrval, not before or after
     """
     for i, d in enumerate(positions):
         # the searched time is before since the list is sorted
@@ -64,6 +70,9 @@ def get_closest_pos(positions: list, time: dt) -> dict:
                     return d
                 else:
                     return None
+
+    print(positions[0])    
+    print(positions[-1])
 
 
 def main():
@@ -101,37 +110,50 @@ def main():
 
     positions.sort(key = comparing_fun)
 
+
     for picture in pictures:
-        with open(picture, "rb") as f:
-            p = exif.Image(f)
+        img = Image.open(picture)
+
+        if "exif" in img.info:
+            exif_dict = piexif.load(img.info["exif"])
+        else:
+            # TODO make it work in this case too
+            print(f"ERROR : he picture {picture} has no exif data ! I will ignore it.")
+            continue
+
+        exif_dict = piexif.load(picture)
 
         time_format = "%Y:%m:%d %H:%M:%S"
-        time = dt.datetime.strptime(p.datetime, time_format)
+        pict_time = dt.datetime.strptime(exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal].decode(), time_format)
+        pict_time = pict_time - TIME_ADVANCE
+        print(pict_time)
 
         # time zone gestion
-        tz = pytz.timezone(positions[0]["time"].tzname())
-        time = tz.localize(time)
+        # TODO : ask the user which time zone to use
+        tz = pytz.timezone(CAMERA_TIMEZONE)
+        pict_time = tz.localize(pict_time)
 
-        pos = get_closest_pos(positions, time)
-
-        print(pos)
+        pos = get_closest_pos(positions, pict_time)
+        
         # converting to degree, minute, seconds
         frac, degree = modf(pos["longitude"])
         frac, minutes = modf(frac * 60)
         seconds = floor(frac * 60) # TODO : should be decimal seconds, chekc if this is ok
 
-        p.gps_longitude = (degree, minutes, seconds)
+        lon_tuple = ((int(degree), 1), (int(minutes), 1), (int(seconds * 100), 100))
+        exif_dict["GPS"][piexif.GPSIFD.GPSLongitude] = lon_tuple
+        exif_dict["GPS"][piexif.GPSIFD.GPSLongitudeRef] = "E" if pos["longitude"] >= 0 else "W"
 
         frac, degree = modf(pos["latitude"])
         frac, minutes = modf(frac * 60)
         seconds = floor(frac * 60) # TODO : should be decimal seconds, chekc if this is ok
 
-        p.gps_latitude = (degree, minutes, seconds)
-    
+        lat_tuple = ((int(degree), 1), (int(minutes), 1), (int(seconds * 100), 100))
+        exif_dict["GPS"][piexif.GPSIFD.GPSLatitude] = lat_tuple
+        exif_dict["GPS"][piexif.GPSIFD.GPSLatitudeRef] = "N" if pos["latitude"] >= 0 else "S"
 
-        with open(picture, "wb") as f:
-            pass
-            #f.write(p.get_file())
+        exif_bytes = piexif.dump(exif_dict)
+        img.save(picture, exif=exif_bytes, quality="keep")
     
 
     
@@ -139,9 +161,5 @@ def main():
 
 if __name__ == "__main__":
     print(get_all_pictures(None))
-    #main()
+    main()
 
-    with open("test/DSC_2358.JPG", "rb") as f:
-        p = exif.Image(f)
-
-    print(p.list_all())
