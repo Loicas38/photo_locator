@@ -2,6 +2,9 @@ import streamlit as st
 from from_trace import *
 from variables import *
 from frontend_utils import *
+import pandas as pd
+import pydeck as pdk
+from pydeck.data_utils import compute_view
 
 class Display():
     def __init__(self):
@@ -23,6 +26,54 @@ class Display():
 
     def location_display(self):
         st.title("Location of your pictures")
+        
+        data = get_picts_details()
+        p = pd.DataFrame(data)
+        # line by gemini, see if relevant TODO
+        p = pd.DataFrame(data).dropna(subset=["Latitude", "Longitude"])
+
+        pictures_layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=p,
+            
+            pickable=True,
+            opacity=0.8,
+            stroked=True,
+            filled=True,
+            radius_scale=6,
+            radius_min_pixels=10,
+            radius_max_pixels=100,
+            line_width_min_pixels=1,
+            get_position=["Longitude", "Latitude"],
+            get_radius=0.5,
+            get_fill_color=[255, 0, 0, 140],
+            get_line_color=[0, 0, 0],
+        )
+
+
+        if len(p["Longitude"] > 1):
+            # aims at centering the view
+            view = pdk.ViewState(
+                longitude=p["Longitude"][0], 
+                latitude=p["Latitude"][0],
+                zoom=15, 
+                bearing=0, 
+                pitch=0
+            )
+        else :
+            view = compute_view(
+                points = [[long, lat] for long, lat in zip(data["Longitude"], data["Latitude"]) if lat != None and long != None]
+            )
+
+        
+
+        deck = pdk.Deck(
+            [pictures_layer],
+            initial_view_state=view,
+            tooltip={"text": "{files}"},
+        )
+
+        st.pydeck_chart(deck)
 
     def upload_pictures(self):
         st.title("pictures upload")

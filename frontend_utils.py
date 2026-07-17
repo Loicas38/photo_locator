@@ -9,10 +9,10 @@ def convert_lat_long(pos):
     """
     to convert the pos extraceted from exif
     """
-    lat = pos[0][0]
-    long = pos[1][0]
+    lat = pos[0][0][0] / pos[0][0][1] + pos[0][1][0] / (60 * pos[0][1][1]) + pos[0][2][0] / (3600 * pos[0][2][1])
+    long = pos[1][0][0] / pos[1][0][1] + pos[1][1][0] / (60 * pos[1][1][1]) + pos[1][2][0] / (3600 * pos[1][2][1])
 
-    return (lat[0], long[0])
+    return (lat, long)
 
 
 def get_picts_details() -> dict:
@@ -39,7 +39,7 @@ def get_picts_details() -> dict:
     data = {
         "files": [],
         "Latitude": [],
-        "Longitude": []
+        "Longitude": [],
         #"thumbnail": []
     }
 
@@ -59,12 +59,12 @@ def get_picts_details() -> dict:
                 if "exif" in img.info:
                     exif_dict = piexif.load(img.info["exif"])
                     lat, long = convert_lat_long((exif_dict.get("GPS").get(piexif.GPSIFD.GPSLatitude), exif_dict.get("GPS").get(piexif.GPSIFD.GPSLongitude)))
-                    data["Latitude"].append(str(lat))
-                    data["Longitude"].append(str(long))
+                    data["Latitude"].append(lat)
+                    data["Longitude"].append(long)
                     #data["thumbnail"].append(exif_dict.get("thumbnail"))
                 else:
-                    data["Latitude"].append("NaN")
-                    data["Longitude"].append("NaN")
+                    data["Latitude"].append(None)
+                    data["Longitude"].append(None)
                     #data["thumbnail"].append(None)
 
                 img.close()
@@ -112,4 +112,7 @@ def get_failed_pictures():
 
 
 if __name__ =="__main__":
-    print(get_picts_details())
+    data = get_picts_details()
+    p = pd.DataFrame(data)
+    p = pd.DataFrame(data).dropna(subset=["Latitude", "Longitude"])
+    print(len(p["Longitude"]))
