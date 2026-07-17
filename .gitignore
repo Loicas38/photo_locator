@@ -1,3 +1,6 @@
 pictures/
 gpxs/
 failedpictures/
+__pycache__/
+.vscode/
+failed/
