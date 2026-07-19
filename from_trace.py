@@ -11,41 +11,6 @@ from variables import *
 from utils import *
 
 
-def get_all_pictures() -> list:
-    """
-    Params:
-        formats (str list): The list of picture format which have to be considered. If None, it considers everything
-    
-    Returns:
-        A list containing the name of the files in the directory. Doesn't explore subdirs
-    """
-    picts_path = ""
-
-    if PATH != "" and PATH != None:
-        picts_path = PATH
-
-    if PHOTOS_PATH != None and PHOTOS_PATH != "":
-        if picts_path == "" :
-            picts_path = PHOTOS_PATH
-        else:
-            picts_path += "\\" + PHOTOS_PATH
-
-
-    if not os.path.exists(picts_path):
-        print("ERROR : the path to the pictures doesn't exist")
-        exit(1)
-
-    photos = []
-    for entry in os.listdir(picts_path):
-        full_path = os.path.join(picts_path, entry)
-
-        if os.path.isfile(full_path):
-            _, ext = os.path.splitext(full_path)
-
-            if PICTURE_FORMATS == None or ext in PICTURE_FORMATS:
-                photos.append(entry)
-
-    return photos
 
 def get_all_gpxs() -> list:
     """

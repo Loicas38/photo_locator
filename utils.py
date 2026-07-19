@@ -28,6 +28,9 @@ def get_pict_time(exif_dict: dict) -> dt:
     Returns a datetime object containing the time at which the picture was taken, using the data 
     in the variables.py file
     """
+    if exif_dict["Exif"].get(piexif.ExifIFD.DateTimeOriginal) == None:
+        return None
+
     time_format = "%Y:%m:%d %H:%M:%S"
     pict_time = dt.datetime.strptime(exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal].decode(), time_format)
     pict_time = pict_time - TIME_ADVANCE
@@ -53,6 +56,19 @@ def get_pict_path(picture: str):
 
     return pict_path
 
+def get_failed_pict_path(picture: str):
+    pict_path = ""
+
+    if PATH != None and PATH != "":
+        pict_path = PATH + "\\"
+
+    if FAILED_PATH != None and FAILED_PATH != "":
+        pict_path += FAILED_PATH + "\\"
+
+    pict_path += picture 
+
+    return pict_path
+
 def picture_add_position(picture: str, pos: dict) -> bool:
     """
     Adds the location to the picture.
@@ -68,14 +84,20 @@ def picture_add_position(picture: str, pos: dict) -> bool:
 
     img = Image.open(pict_path)
 
+    exif_dict= {
+            "GPS": {}
+        }
+
     if "exif" in img.info:
         exif_dict = piexif.load(img.info["exif"])
-    else:
+    """else:
+        pass
+        
         # TODO make it work in this case too
         print(f"ERROR : the picture {picture} has no exif data ! I will ignore it.")
         img.close()
         process_failed_pictures(picture)
-        return
+        return"""
 
     if pos == None:
         print(f"No location found for '{picture}', I will ignore it.")
@@ -120,6 +142,8 @@ def picture_add_position(picture: str, pos: dict) -> bool:
     exif_bytes = piexif.dump(exif_dict)
     img.save(pict_path, exif=exif_bytes, quality="keep")
 
+    return True
+
 def remove_position(picture: str):
     """
     Removes the location of picture
@@ -139,7 +163,55 @@ def remove_position(picture: str):
     exif_bytes = piexif.dump(exif_dict)
     img.save(pict_path, exif=exif_bytes, quality="keep")
 
+def get_all_pictures() -> list:
+    """
+    Params:
+        formats (str list): The list of picture format which have to be considered. If None, it considers everything
+    
+    Returns:
+        A list containing the name of the files in the directory. Doesn't explore subdirs
+    """
+    picts_path = ""
+
+    if PATH != "" and PATH != None:
+        picts_path = PATH
+
+    if PHOTOS_PATH != None and PHOTOS_PATH != "":
+        if picts_path == "" :
+            picts_path = PHOTOS_PATH
+        else:
+            picts_path += "\\" + PHOTOS_PATH
+
+
+    if not os.path.exists(picts_path):
+        print("ERROR : the path to the pictures doesn't exist")
+        exit(1)
+
+    photos = []
+    for entry in os.listdir(picts_path):
+        full_path = os.path.join(picts_path, entry)
+
+        if os.path.isfile(full_path):
+            _, ext = os.path.splitext(full_path)
+
+            if PICTURE_FORMATS == None or ext in PICTURE_FORMATS:
+                photos.append(entry)
+
+    return photos
 
 
 if __name__ == "__main__":
-    remove_position("DSC_2668.JPG")
+    picture="DSC_2668.JPG"
+    pict_path = get_pict_path(picture)
+
+    img = Image.open(pict_path)
+
+    if "exif" in img.info:
+        exif_dict = piexif.load(img.info["exif"])
+        print(exif_dict.keys())
+        print(exif_dict["GPS"].keys())
+    else:
+        # TODO make it work in this case too
+        print(f"ERROR : the picture {picture} has no exif data ! I will ignore it.")
+        img.close()
+        process_failed_pictures(picture)

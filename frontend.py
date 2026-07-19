@@ -5,6 +5,8 @@ from frontend_utils import *
 import pandas as pd
 import pydeck as pdk
 from pydeck.data_utils import compute_view
+from streamlit_folium import st_folium
+import folium
 
 class Display():
     def __init__(self):
@@ -12,8 +14,8 @@ class Display():
             "home": st.Page(self.home_page, title="Home"),  
             "manual": st.Page(self.manual_editing, title="Manual editing"),
             "map": st.Page(self.location_display, title="Location display"),
-            "picture_upload": st.Page(self.upload_pictures, title="Pictures upload"),
-            "gpx_upload": st.Page(self.upload_gpxs, title="Upload gpx files"),
+            "picture_upload": st.Page(self.picture_management, title="Picture management"),
+            "gpx_upload": st.Page(self.gpx_management, title="gpx management"),
             "import_from_gpx": st.Page(self.edit_from_gpx, title="Import location from GPX")
         }
 
@@ -21,16 +23,118 @@ class Display():
         pg = st.navigation(p, position="sidebar", expanded=False)
         pg.run()
 
+    def add_position(self, picts, pos):
+        failed = []
+        for pict in picts:
+            res = picture_add_position(pict, pos=pos)
+
+            if not res:
+                failed.append(pict)
+
+        st.success(f"Done, with {len(failed)} uneditted pictures.")
+
+        if len(failed) > 0:
+            with st.expander(label="Failled pictures :", expanded=False):
+                for pict in failed:
+                    st.error(f"{pict} failed !")
+
     def manual_editing(self):
         st.title("Manual editing")
+
+        to_edit = st.multiselect(
+            label="Choose the pictures you want to edit",
+            key=3,
+            options=get_all_pictures(),
+            persist_state="page"
+        )
+
+        DEFAULT_LATITUDE = 48.85
+        DEFAULT_LONGITUDE = 2.37
+
+        st.header("Choose the position manually ...")
+
+        with st.container(horizontal=True, horizontal_alignment="distribute"):
+            form_lat = st.number_input(
+                label = "Latitude",
+                min_value=-90.0,
+                max_value=90.0,
+                value=DEFAULT_LATITUDE,
+                step=0.01,
+                key=4,
+                persist_state="page"
+            )
+
+            form_long = st.number_input(
+                label = "Longitude",
+                min_value=-90.0,
+                max_value=90.0,
+                value=DEFAULT_LONGITUDE,
+                step=0.01,
+                key=5,
+                persist_state="page"
+            )
+
+        st.map(
+            data={
+                "Latitude": [form_lat],
+                "Longitude": [form_long]
+            },
+            latitude="Latitude",
+            longitude="Longitude"
+        )
+
+        if st.button(label="Apply the position chosen manually", help="Warning : this can't be undone", icon=":material/edit:"):
+            self.add_position(to_edit, {"latitude": form_lat, "longitude":form_long})
+
+        st.header("Or select the position on the map !")
+
+
+        m = folium.Map(location=[DEFAULT_LATITUDE, DEFAULT_LONGITUDE], zoom_start=10)
+
+        # The code below will be responsible for displaying 
+        # the popup with the latitude and longitude shown
+        m.add_child(folium.LatLngPopup())
+
+        f_map = st_folium(m, width=725)
+
+        map_lat = DEFAULT_LATITUDE
+        map_long = DEFAULT_LONGITUDE
+
+        if f_map.get("last_clicked"):
+            selected_latitude = f_map["last_clicked"]["lat"]
+            selected_longitude = f_map["last_clicked"]["lng"]
+
+        with st.container(horizontal=True, horizontal_alignment="center"):
+            form = st.form("Position entry form", border=False, width="content")
+
+            submit = form.form_submit_button(label="Choose this position")
+
+        if submit:
+            if selected_latitude == DEFAULT_LATITUDE and selected_longitude == DEFAULT_LONGITUDE:
+                st.warning("Selected position has default values!")
+            st.success(f"Stored position: {selected_latitude:.4f}, {selected_longitude:.4f}")
+
+
+        if st.button(label="Apply the position chosen on the map", help="Warning : this can't be undone", icon=":material/map:"):
+            self.add_position(to_edit, {"latitude": map_lat, "longitude":map_long})
+
+
+            
+
+
 
     def location_display(self):
         st.title("Location of your pictures")
         
         data = get_picts_details()
-        p = pd.DataFrame(data)
+        loc_data = {
+            "files": data["files"],
+            "Latitude": data["Latitude"],
+            "Longitude": data["Longitude"]
+        }
+        p = pd.DataFrame(loc_data)
         # line by gemini, see if relevant TODO
-        p = pd.DataFrame(data).dropna(subset=["Latitude", "Longitude"])
+        p = pd.DataFrame(loc_data).dropna(subset=["Latitude", "Longitude"])
 
         pictures_layer = pdk.Layer(
             "ScatterplotLayer",
@@ -41,7 +145,7 @@ class Display():
             stroked=True,
             filled=True,
             radius_scale=6,
-            radius_min_pixels=10,
+            radius_min_pixels=5,
             radius_max_pixels=100,
             line_width_min_pixels=1,
             get_position=["Longitude", "Latitude"],
@@ -51,7 +155,8 @@ class Display():
         )
 
 
-        if len(p["Longitude"] > 1):
+        if len(p["Longitude"]) == 1:
+            print(p)
             # aims at centering the view
             view = pdk.ViewState(
                 longitude=p["Longitude"][0], 
@@ -62,30 +167,122 @@ class Display():
             )
         else :
             view = compute_view(
-                points = [[long, lat] for long, lat in zip(data["Longitude"], data["Latitude"]) if lat != None and long != None]
+                points = [[long, lat] for long, lat in zip(loc_data["Longitude"], loc_data["Latitude"]) if lat != None and long != None]
             )
+            view.zoom -= 1
 
         
-
+        # TODO : make the Longitude and latitude display have only 2 or thre decimal digits
         deck = pdk.Deck(
             [pictures_layer],
             initial_view_state=view,
-            tooltip={"text": "{files}"},
+            tooltip={"text": "{files}\n({Longitude}, {Latitude})"},
+            map_style=pdk.map_styles.CARTO_LIGHT
         )
 
         st.pydeck_chart(deck)
 
-    def upload_pictures(self):
-        st.title("pictures upload")
+        with st.expander(label="Pictures gallery", expanded=False):
+            picts = get_picts_details()
+            paths = [get_pict_path(p) for p in picts["files"]]
+            captions = [f"{picts["files"][i]} at {picts["Time"][i]}, lat : {picts["Latitude"][i]}, long : {picts["Longitude"][i]}" for i in range(len(picts["files"]))]
 
-        st.header("Current pictures :")
-        self.display_pictures_files("Current pictures")
+            st.image(paths, caption=captions)
 
-    def upload_gpxs(self):
-        st.title("Upload gpx files")
+    def picture_management(self):
+        st.title("Picture management")
+
+        self.display_pictures_files("Updated / not yet processed pictures")
+        self.display_failed_pictures()
+
+        st.header("Upload new pictures")
+
+        new_pictures = st.file_uploader(label="Add new pictures", type="image", max_upload_size=1000, accept_multiple_files=True)
+
+        # We have to save the new pictures
+        for pict in new_pictures:
+            path = get_pict_path(pict.name)
+            with open(path, "wb") as f:
+                f.write(pict.getvalue())
+        
+        if len(new_pictures) > 0:
+            st.switch_page(self.pages["picture_upload"])
+
+
+        st.header("Remove pictures")
+
+        to_delete = st.multiselect(
+            label="Choose the pictures you want to delete",
+            key=1,
+            options=get_all_pictures(),
+            persist_state="page"
+        )
+
+        with st.container(horizontal_alignment="center"):
+            if st.button(label="Delete the selected pictures", icon="⚠️", help="Warning : you won't be able to recover these pictures !"):
+                for pict  in to_delete:
+                    delete_picture(pict)
+
+                st.write("Done !")
+
+        st.header("Download your pictures")
+
+        with st.container(horizontal=True, horizontal_alignment="distribute"):
+            st.download_button(
+                label="Download successfully processed pictures", 
+                help="If pictures have not been processed yet, this will dowload all of them.",
+                data = get_zip_successful_data,
+                file_name="successfull_pictures.zip",
+                icon=":material/download:"
+            )
+
+            st.download_button(
+                label="Download the failed pictures", 
+                help="If pictures have not been processed yet, this will be empty.",
+                data = get_zip_failed_data,
+                file_name="failed_pictures.zip",
+                icon=":material/download:"
+            )
+        
+
+
+    def gpx_management(self):
+        st.title("Manage GPX files")
 
         st.header("Current gpx files :")
         self.display_gpx_files()
+
+        st.header("Upload new files")
+
+        new_gpx = st.file_uploader(label="Add new pictures", type=".gpx", max_upload_size=20, accept_multiple_files=True)
+
+        # We have to save the new pictures
+        for g in new_gpx:
+            path = get_gpx_path(g.name)
+            with open(path, "wb") as f:
+                f.write(g.getvalue())
+        
+        if len(new_gpx) > 0:
+            st.switch_page(self.pages["gpx_upload"])
+
+
+        st.header("Remove gpx files")
+
+        to_delete = st.multiselect(
+            label="Choose the files you want to delete",
+            key=2,
+            options=get_all_gpxs_files(),
+            persist_state="page"
+        )
+
+        with st.container(horizontal_alignment="center"):
+            if st.button(label="Delete the selected files", icon="⚠️", help="Warning : you won't be able to recover these files !"):
+                for g  in to_delete:
+                    delete_gpx(g)
+
+                st.write("Done !")
+
+
 
     def edit_from_gpx(self):
         st.title("Add location using gpx files")
