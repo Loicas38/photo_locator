@@ -1,0 +1,20 @@
+{
+    "PATH": "",
+    "PHOTOS_PATH": "pictures",
+    "FAILED_PATH": "failed",
+    "SUCCESS_PATH": "pictures",
+    "GPXS_PATH": "gpxs",
+    "EPSILON_days": 0,
+    "EPSILON_hours": 0,
+    "EPSILON_minutes": 1,
+    "EPSILON_seconds": 0,
+    "TIME_ADVANCE_days": 0,
+    "TIME_ADVANCE_hours": 0,
+    "TIME_ADVANCE_minutes": 6,
+    "TIME_ADVANCE_seconds": 13,
+    "CAMERA_TIMEZONE": "Europe/Paris",
+    "PICTURE_FORMATS": [
+        ".JPG",
+        ".jpg"
+    ]
+}

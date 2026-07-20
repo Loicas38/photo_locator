@@ -4,3 +4,4 @@ failedpictures/
 __pycache__/
 .vscode/
 failed/
+test.py

@@ -7,8 +7,8 @@ import gpx
 import datetime as dt
 import pytz
 from pathlib import Path
-from variables import *
 from utils import *
+import streamlit as st
 
 
 
@@ -18,18 +18,18 @@ def get_all_gpxs() -> list:
     """
     gpx_path = ""
 
-    if PATH != "" and PATH != None:
-        gpx_path = PATH
+    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
+        gpx_path = st.session_state["PATH"]
 
-    if GPXS_PATH != None and GPXS_PATH != "":
+    if st.session_state["GPXS_PATH"] != None and st.session_state["GPXS_PATH"] != "":
         if gpx_path == "" :
-            gpx_path = GPXS_PATH
+            gpx_path = st.session_state["GPXS_PATH"]
         else:
-            gpx_path += "\\" + GPXS_PATH
+            gpx_path += "\\" + st.session_state["GPXS_PATH"]
 
     if not os.path.exists(gpx_path):
         print("ERROR : the path to the gpx files doesn't exist")
-        exit(1)
+        return None
 
     gpxs = []
     for entry in os.listdir(gpx_path):
@@ -49,18 +49,18 @@ def get_all_gpxs_files() -> list:
     """
     gpx_path = ""
 
-    if PATH != "" and PATH != None:
-        gpx_path = PATH
+    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
+        gpx_path = st.session_state["PATH"]
 
-    if GPXS_PATH != None and GPXS_PATH != "":
+    if st.session_state["GPXS_PATH"] != None and st.session_state["GPXS_PATH"] != "":
         if gpx_path == "" :
-            gpx_path = GPXS_PATH
+            gpx_path = st.session_state["GPXS_PATH"]
         else:
-            gpx_path += "\\" + GPXS_PATH
+            gpx_path += "\\" + st.session_state["GPXS_PATH"]
 
     if not os.path.exists(gpx_path):
         print("ERROR : the path to the gpx files doesn't exist")
-        exit(1)
+        return None
 
     gpxs = []
     for entry in os.listdir(gpx_path):
@@ -113,13 +113,13 @@ def get_closest_pos(positions: list, time: dt) -> dict:
                 gap2 = d["time"] - time
 
                 if gap1 < gap2:
-                    if gap1 < EPSILON:
+                    if gap1 < get_epsilon_dt():
                         if current_best == None or gap1 < best_delta:
                             current_best = pos_lst[i - 1]
                             best_delta = gap1
 
                 else :
-                    if gap2 < EPSILON:
+                    if gap2 < get_epsilon_dt():
                         if current_best == None or gap2 < best_delta:
                             current_best = d
                             best_delta = gap2

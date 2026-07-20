@@ -1,10 +1,13 @@
-from variables import *
 import os 
 from pathlib import Path
 from PIL import Image
 import piexif
 import pytz
 import datetime as dt
+import json
+import streamlit as st
+import io
+import zipfile
 
 def process_failed_pictures(picture: str):
     """
@@ -12,10 +15,10 @@ def process_failed_pictures(picture: str):
     """
     path = ""
 
-    if PATH != "" and PATH != None:
-        path = PATH + "\\"
+    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
+        path = st.session_state["PATH"] + "\\"
 
-    path += "failed\\" + picture
+    path += st.session_state["FAILED_PATH"] + "\\" + picture
 
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
@@ -33,12 +36,12 @@ def get_pict_time(exif_dict: dict) -> dt:
 
     time_format = "%Y:%m:%d %H:%M:%S"
     pict_time = dt.datetime.strptime(exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal].decode(), time_format)
-    pict_time = pict_time - TIME_ADVANCE
+    pict_time = pict_time - get_time_advance_dt()
     # print(f"picture {picture} at {pict_time}")
 
     # time zone gestion
     # TODO : ask the user which time zone to use
-    tz = pytz.timezone(CAMERA_TIMEZONE)
+    tz = pytz.timezone(st.session_state["CAMERA_TIMEZONE"])
     pict_time = tz.localize(pict_time)
 
     return pict_time
@@ -46,11 +49,11 @@ def get_pict_time(exif_dict: dict) -> dt:
 def get_pict_path(picture: str):
     pict_path = ""
 
-    if PATH != None and PATH != "":
-        pict_path = PATH + "\\"
+    if st.session_state["PATH"] != None and st.session_state["PATH"] != "":
+        pict_path = st.session_state["PATH"] + "\\"
 
-    if PHOTOS_PATH != None and PHOTOS_PATH != "":
-        pict_path += PHOTOS_PATH + "\\"
+    if st.session_state["PHOTOS_PATH"] != None and st.session_state["PHOTOS_PATH"] != "":
+        pict_path += st.session_state["PHOTOS_PATH"] + "\\"
 
     pict_path += picture 
 
@@ -59,11 +62,11 @@ def get_pict_path(picture: str):
 def get_failed_pict_path(picture: str):
     pict_path = ""
 
-    if PATH != None and PATH != "":
-        pict_path = PATH + "\\"
+    if st.session_state["PATH"] != None and st.session_state["PATH"] != "":
+        pict_path = st.session_state["PATH"] + "\\"
 
-    if FAILED_PATH != None and FAILED_PATH != "":
-        pict_path += FAILED_PATH + "\\"
+    if st.session_state["FAILED_PATH"] != None and st.session_state["FAILED_PATH"] != "":
+        pict_path += st.session_state["FAILED_PATH"] + "\\"
 
     pict_path += picture 
 
@@ -173,14 +176,14 @@ def get_all_pictures() -> list:
     """
     picts_path = ""
 
-    if PATH != "" and PATH != None:
-        picts_path = PATH
+    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
+        picts_path = st.session_state["PATH"]
 
-    if PHOTOS_PATH != None and PHOTOS_PATH != "":
+    if st.session_state["PHOTOS_PATH"] != None and st.session_state["PHOTOS_PATH"] != "":
         if picts_path == "" :
-            picts_path = PHOTOS_PATH
+            picts_path = st.session_state["PHOTOS_PATH"]
         else:
-            picts_path += "\\" + PHOTOS_PATH
+            picts_path += "\\" + st.session_state["PHOTOS_PATH"]
 
 
     if not os.path.exists(picts_path):
@@ -194,10 +197,258 @@ def get_all_pictures() -> list:
         if os.path.isfile(full_path):
             _, ext = os.path.splitext(full_path)
 
-            if PICTURE_FORMATS == None or ext in PICTURE_FORMATS:
+            if st.session_state["PICTURE_FORMATS"] == None or ext in st.session_state["PICTURE_FORMATS"]:
                 photos.append(entry)
 
     return photos
+
+def store_settings():
+    """
+    Saves the variables of variables.py in settings.json
+    """
+
+    dic = {
+        "PATH": st.session_state.PATH,
+        "PHOTOS_PATH": st.session_state.PHOTOS_PATH,
+        "FAILED_PATH": st.session_state.FAILED_PATH,
+        "SUCCESS_PATH": st.session_state.SUCCESS_PATH,
+        "GPXS_PATH": st.session_state.GPXS_PATH,
+
+        "EPSILON_days": st.session_state.EPSILON_days,
+        "EPSILON_hours": st.session_state.EPSILON_hours,
+        "EPSILON_minutes": st.session_state.EPSILON_minutes,
+        "EPSILON_seconds": st.session_state.EPSILON_seconds,
+
+        "TIME_ADVANCE_days" : st.session_state.TIME_ADVANCE_days,
+        "TIME_ADVANCE_hours" : st.session_state.TIME_ADVANCE_hours,
+        "TIME_ADVANCE_minutes" : st.session_state.TIME_ADVANCE_minutes,
+        "TIME_ADVANCE_seconds" : st.session_state.TIME_ADVANCE_seconds,
+
+        "CAMERA_TIMEZONE": st.session_state.CAMERA_TIMEZONE,
+
+        "PICTURE_FORMATS": st.session_state.PICTURE_FORMATS
+    }
+
+    with open("settings.json", "w") as f:
+        json.dump(dic, f, indent=4)
+
+
+
+def convert_lat_long(pos):
+    """
+    to convert the pos extraceted from exif
+    """
+    if pos == None or pos[0] == None:
+        return None, None
+
+    lat = pos[0][0][0] / pos[0][0][1] + pos[0][1][0] / (60 * pos[0][1][1]) + pos[0][2][0] / (3600 * pos[0][2][1])
+    long = pos[1][0][0] / pos[1][0][1] + pos[1][1][0] / (60 * pos[1][1][1]) + pos[1][2][0] / (3600 * pos[1][2][1])
+
+    return (lat, long)
+
+def get_picts_details() -> dict:
+    """
+    Returns a dict containing lists with the data of the pictures in PATH\\PHOTOS_PATH
+    """
+
+    picts_path = ""
+
+    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
+        picts_path = st.session_state["PATH"]
+
+    if st.session_state["PHOTOS_PATH"] != None and st.session_state["PHOTOS_PATH"] != "":
+        if picts_path == "" :
+            picts_path = st.session_state["PHOTOS_PATH"]
+        else:
+            picts_path += "\\" + st.session_state["PHOTOS_PATH"]
+
+
+    if not os.path.exists(picts_path):
+        print("ERROR : the path to the pictures doesn't exist")
+        return None
+
+    data = {
+        "files": [],
+        "Latitude": [],
+        "Longitude": [],
+        "Time": []
+        #"thumbnail": []
+    }
+
+
+    for entry in os.listdir(picts_path):
+        full_path = os.path.join(picts_path, entry)
+
+        if os.path.isfile(full_path):
+            _, ext = os.path.splitext(full_path)
+
+            if st.session_state["PICTURE_FORMATS"] == None or ext in st.session_state["PICTURE_FORMATS"]:
+                # this is a picture with the good extension
+                data["files"].append(entry)
+
+                img = Image.open(full_path)
+
+                if "exif" in img.info:
+                    exif_dict = piexif.load(img.info["exif"])
+                    lat, long = convert_lat_long((exif_dict.get("GPS").get(piexif.GPSIFD.GPSLatitude), exif_dict.get("GPS").get(piexif.GPSIFD.GPSLongitude)))
+                    data["Latitude"].append(lat)
+                    data["Longitude"].append(long)
+                    data["Time"].append(get_pict_time(exif_dict))
+                    #data["thumbnail"].append(exif_dict.get("thumbnail"))
+                else:
+                    data["Latitude"].append(None)
+                    data["Longitude"].append(None)
+                    data["Time"].append(None)
+                    #data["thumbnail"].append(None)
+
+                img.close()
+    
+    return data
+
+def get_failed_pictures():
+    """
+    Returns a dict containing lists with the data of the pictures in PATH\\PHOTOS_PATH
+    """
+
+    picts_path = ""
+
+    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
+        picts_path = st.session_state["PATH"]
+
+    if st.session_state["FAILED_PATH"] != None and st.session_state["FAILED_PATH"] != "":
+        if picts_path == "" :
+            picts_path = st.session_state["FAILED_PATH"]
+        else:
+            picts_path += "\\" + st.session_state["FAILED_PATH"]
+
+
+    if not os.path.exists(picts_path):
+        print("ERROR : the path to the pictures doesn't exist")
+        return None
+
+    data = {
+        "Pictures": []
+    }
+
+
+    for entry in os.listdir(picts_path):
+        full_path = os.path.join(picts_path, entry)
+
+        if os.path.isfile(full_path):
+            _, ext = os.path.splitext(full_path)
+
+            if st.session_state["PICTURE_FORMATS"] == None or ext in st.session_state["PICTURE_FORMATS"]:
+                # this is a picture with the good extension
+                data["Pictures"].append(entry)
+    
+    return data
+
+def delete_picture(picture: str):
+    """
+    Delets the given picture. `picture` is the filename of the picture to delete
+    """
+    path = get_pict_path(picture)
+
+    os.remove(path)
+
+def delete_all_pictures():
+    """
+    Deletes all pictures
+    """
+
+    pictures = get_all_pictures()
+
+    for pict in pictures:
+        delete_picture(pict)
+
+def delete_failed_picture(picture: str):
+    """
+    Deletes the picture in the path of the ones which failed
+    """
+
+    path = get_failed_pict_path(picture)
+    os.remove(path)
+
+def delete_all_failed_pictures():
+    picts = get_failed_pictures()
+    
+    for pict in picts:
+        delete_failed_picture(pict)
+
+def get_zip_successful_data():
+    """
+    Returns the content of a zip with the pictures in the PHOTO_PATH directory
+    """
+    buf = io.BytesIO()
+    pictures = get_all_pictures()
+
+    with zipfile.ZipFile(buf, "x") as im_zip:
+        for pict in pictures:
+            im_zip.write(get_pict_path(pict))
+
+    return buf
+
+def get_zip_failed_data():
+    """
+    Returns the content of a zip with the pictures in the PHOTO_PATH directory
+    """
+    buf = io.BytesIO()
+    pictures = get_failed_pictures()
+
+    with zipfile.ZipFile(buf, "x") as im_zip:
+        for pict in pictures:
+            im_zip.write(get_failed_pict_path(pict))
+
+    return buf
+
+def get_gpx_path(gpx_f: str) -> str:
+    """
+    returns the path towards the gpx file specified
+    """
+
+    path = ""
+
+    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
+        path += st.session_state["PATH"] + "\\"
+
+    if st.session_state["GPXS_PATH"] != None and st.session_state["GPXS_PATH"] != "":
+        path += st.session_state["GPXS_PATH"] + "\\"
+
+    path += gpx_f
+
+    return path
+
+def delete_gpx(g: str):
+    path = get_gpx_path(g)
+    os.remove(path)
+
+def get_time_advance_dt() -> dt:
+    return dt.timedelta(
+            seconds=st.session_state.TIME_ADVANCE_seconds,
+            minutes=st.session_state.TIME_ADVANCE_minutes,
+            hours=st.session_state.TIME_ADVANCE_hours,
+            days=st.session_state.TIME_ADVANCE_days
+        )
+
+def get_epsilon_dt() -> dt:
+    return dt.timedelta(
+            seconds=st.session_state.EPSILON_seconds,
+            minutes=st.session_state.EPSILON_minutes,
+            hours=st.session_state.EPSILON_hours,
+            days=st.session_state.EPSILON_days
+        )
+
+def load_settings():
+    if "settings_loaded" not in st.session_state:
+    
+        with open("settings.json", "r") as f:
+            saved_settings = json.load(f)
+
+        
+        for key, value in saved_settings.items():
+            st.session_state[key] = value
+            
+        st.session_state["settings_loaded"] = True
 
 
 if __name__ == "__main__":
