@@ -1,12 +1,9 @@
 """This script will apply the position at the time the picture wa taken """
 
-from PIL import Image
 import piexif
 import os
 import gpx
 import datetime as dt
-import pytz
-from pathlib import Path
 from utils import *
 import streamlit as st
 
@@ -166,7 +163,7 @@ def get_pos(gpxs : list) -> list:
     pos_lst.sort(key = pos_lst_comparing_fun)
     return pos_lst
 
-def import_from_trace():
+def import_from_trace() -> bool:
     """
     Process the pictures in the pictures path, using the gpx files.
     """
@@ -174,24 +171,24 @@ def import_from_trace():
 
     if len(gpx_lst) == 0:
         print("ERROR : no gpx files found in the specified directory with the good format")
-        exit(1)
+        return None
 
     pictures = get_all_pictures()
 
     if len(pictures) == 0:
         print("ERROR : no photos found in the specified directory with the good format")
-        exit(1)
+        return None
 
     pos_lst = get_pos(gpx_lst)
 
+    failed = []
+
     for picture in pictures:
         pict_path = get_pict_path(picture)
-        img = Image.open(pict_path)
+        
+        exif_dict = piexif.load(pict_path)
 
-        if "exif" in img.info:
-            exif_dict = piexif.load(img.info["exif"])
-            img.close()
-        else:
+        if False:
             # TODO make it work in this case too
             print(f"ERROR : the picture {picture} has no exif data ! I will ignore it.")
             img.close()
@@ -199,7 +196,11 @@ def import_from_trace():
             continue
     
         pos = get_closest_pos(pos_lst, get_pict_time(exif_dict))
-        picture_add_position(picture, pos)
+        res = picture_add_position(picture, pos)
+        if not res :
+            failed.append(picture)
+
+    return failed
 
 
 if __name__ == "__main__":

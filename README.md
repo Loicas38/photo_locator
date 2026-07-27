@@ -16,5 +16,9 @@ The camera timezone is only useful when using a gpx file.
 
 This script will use all the gpx files provided, look for the closest point from the time at which your picture was taken, and make this position be the one of your picture. Hence, your pictures need to have a time. Be carefull wether your camera is on time or not, and if it is note the cases, you can change it in the `Settings` tab of the app.
 
+## Manual import
+
+If you do not have a gpx file as needed, you can also edit the position of your pictures manually, by selecting a position. It can be done on a map or by selecting the latitude and longitude.
+
 
 The app currently works, the only thing to know is that the success_path has not yet been implemented.

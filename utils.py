@@ -1,6 +1,5 @@
 import os 
 from pathlib import Path
-from PIL import Image
 import piexif
 import pytz
 import datetime as dt
@@ -85,26 +84,14 @@ def picture_add_position(picture: str, pos: dict) -> bool:
     """
     pict_path = get_pict_path(picture)
 
-    img = Image.open(pict_path)
-
     exif_dict= {
             "GPS": {}
         }
 
-    if "exif" in img.info:
-        exif_dict = piexif.load(img.info["exif"])
-    """else:
-        pass
-        
-        # TODO make it work in this case too
-        print(f"ERROR : the picture {picture} has no exif data ! I will ignore it.")
-        img.close()
-        process_failed_pictures(picture)
-        return"""
+    exif_dict = piexif.load(pict_path)
 
     if pos == None:
         print(f"No location found for '{picture}', I will ignore it.")
-        img.close()
         process_failed_pictures(picture)
         return
     
@@ -143,7 +130,12 @@ def picture_add_position(picture: str, pos: dict) -> bool:
     exif_dict["GPS"][piexif.GPSIFD.GPSLongitude] = lon_tuple
 
     exif_bytes = piexif.dump(exif_dict)
-    img.save(pict_path, exif=exif_bytes, quality="keep")
+
+    try :
+        piexif.insert(exif_bytes, pict_path)
+    except ValueError as e:
+        print(e)
+        return False
 
     return True
 
@@ -154,17 +146,12 @@ def remove_position(picture: str):
 
     pict_path = get_pict_path(picture)
 
-    img = Image.open(pict_path)
-
-    if "exif" in img.info:
-        exif_dict = piexif.load(img.info["exif"])
-    else:
-        return
+    exif_dict = piexif.load(pict_path)
 
     exif_dict.pop("GPS", None)
 
     exif_bytes = piexif.dump(exif_dict)
-    img.save(pict_path, exif=exif_bytes, quality="keep")
+    piexif.insert(exif_bytes, pict_path)
 
 def get_all_pictures() -> list:
     """
@@ -286,10 +273,10 @@ def get_picts_details() -> dict:
                 # this is a picture with the good extension
                 data["files"].append(entry)
 
-                img = Image.open(full_path)
+                exif_dict = piexif.load(full_path)
 
-                if "exif" in img.info:
-                    exif_dict = piexif.load(img.info["exif"])
+                if True:
+                    # TODO : check what happens when there is no exif
                     lat, long = convert_lat_long((exif_dict.get("GPS").get(piexif.GPSIFD.GPSLatitude), exif_dict.get("GPS").get(piexif.GPSIFD.GPSLongitude)))
                     data["Latitude"].append(lat)
                     data["Longitude"].append(long)
@@ -301,7 +288,6 @@ def get_picts_details() -> dict:
                     data["Time"].append(None)
                     #data["thumbnail"].append(None)
 
-                img.close()
     
     return data
 
@@ -455,14 +441,12 @@ if __name__ == "__main__":
     picture="DSC_2668.JPG"
     pict_path = get_pict_path(picture)
 
-    img = Image.open(pict_path)
+    exif_dict = piexif.load(pict_path)
 
-    if "exif" in img.info:
-        exif_dict = piexif.load(img.info["exif"])
+    if True:
         print(exif_dict.keys())
         print(exif_dict["GPS"].keys())
     else:
         # TODO make it work in this case too
         print(f"ERROR : the picture {picture} has no exif data ! I will ignore it.")
-        img.close()
         process_failed_pictures(picture)

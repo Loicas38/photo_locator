@@ -320,8 +320,17 @@ class Display():
 
         with st.container(horizontal_alignment="center"):
             if st.button(label="Begin import", disabled=(not ok)):
-                import_from_trace()
-                st.text("Import finished !")
+                res = import_from_trace()
+                if res == None:
+                    st.error("The import failed. There may have no pictures / gpx files or another issue")
+                else :
+                    st.success("Import finished !")
+
+                    if len(res) > 0:
+                        with st.expander(label="Failed pictures"):
+                            st.text("These pictures failed because they were not in the GPX file / or not within the Delta time range (see the settings)")
+                            for pict in res:
+                                st.error(f"{pict} failed to be updated !")
 
                 # Display pictures wich were edited or not
                 st.header("Results")
@@ -379,6 +388,10 @@ class Display():
 
         st.text("This aims at allowing you to set the advance / late of your camera compared to the real time." \
         "It will allow the app to work better if this is precise.")
+
+        st.text("The app will remove the time you enter bellow to the time at which the picture was taken. So," \
+        "if the picture was taken at 11h05 and you put the counter at 2min, then the picture will be considered as " \
+        "if it was shot at 11h03")
 
 
         with st.container(horizontal=True, horizontal_alignment="distribute"):
@@ -484,10 +497,15 @@ class Display():
     def add_position(self, picts, pos):
         failed = []
         for pict in picts:
+            
             res = picture_add_position(pict, pos=pos)
 
             if not res:
                 failed.append(pict)
+
+        if len(failed) == len(picts):
+            st.error("All pictures failed to be editted")
+            return
 
         st.success(f"Done, with {len(failed)} uneditted pictures.")
 
