@@ -1,75 +1,8 @@
-"""This script will apply the position at the time the picture wa taken """
-
 import piexif
-import os
-import gpx
 import datetime as dt
 from utils import *
-import streamlit as st
-
-
-
-def get_all_gpxs() -> list:
-    """
-    Returns a list of gpx objects
-    """
-    gpx_path = ""
-
-    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
-        gpx_path = st.session_state["PATH"]
-
-    if st.session_state["GPXS_PATH"] != None and st.session_state["GPXS_PATH"] != "":
-        if gpx_path == "" :
-            gpx_path = st.session_state["GPXS_PATH"]
-        else:
-            gpx_path += "\\" + st.session_state["GPXS_PATH"]
-
-    if not os.path.exists(gpx_path):
-        print("ERROR : the path to the gpx files doesn't exist")
-        return None
-
-    gpxs = []
-    for entry in os.listdir(gpx_path):
-        full_path = os.path.join(gpx_path, entry)
-
-        if os.path.isfile(full_path):
-            _, ext = os.path.splitext(full_path)
-
-            if ext == ".gpx":
-                gpxs.append(gpx.read_gpx(full_path))
-
-    return gpxs
-
-def get_all_gpxs_files() -> list:
-    """
-    Returns a list of the name of the files
-    """
-    gpx_path = ""
-
-    if st.session_state["PATH"] != "" and st.session_state["PATH"] != None:
-        gpx_path = st.session_state["PATH"]
-
-    if st.session_state["GPXS_PATH"] != None and st.session_state["GPXS_PATH"] != "":
-        if gpx_path == "" :
-            gpx_path = st.session_state["GPXS_PATH"]
-        else:
-            gpx_path += "\\" + st.session_state["GPXS_PATH"]
-
-    if not os.path.exists(gpx_path):
-        print("ERROR : the path to the gpx files doesn't exist")
-        return None
-
-    gpxs = []
-    for entry in os.listdir(gpx_path):
-        full_path = os.path.join(gpx_path, entry)
-
-        if os.path.isfile(full_path):
-            _, ext = os.path.splitext(full_path)
-
-            if ext == ".gpx":
-                gpxs.append(full_path)
-
-    return gpxs
+from gpx_management import *
+from pictures_management import *
 
 def pos_comparing_fun(dic: dict) -> dt:
     """ comparing function for the sort of the positions """
@@ -203,7 +136,88 @@ def import_from_trace() -> bool:
     return failed
 
 
-if __name__ == "__main__":
-    #print(get_all_pictures(None))
-    import_from_trace()
+
+def picture_add_position(picture: str, pos: dict) -> bool:
+    """
+    Adds the location to the picture.
+
+    Params:
+        picture (str): The name of the picture to process
+        pos (dict): A dict containing the keys 'lattitude' and 'longitude' which will be used. The must be decimal.
+
+    Returns:
+        A boolean, true if it succedded, false otherwise
+    """
+    pict_path = get_pict_path(picture)
+
+    exif_dict= {
+            "GPS": {}
+        }
+
+    exif_dict = piexif.load(pict_path)
+
+    if pos == None:
+        print(f"No location found for '{picture}', I will ignore it.")
+        process_failed_pictures(picture)
+        return
+    
+    # --- Conversion pour la LATITUDE ---
+    lat_val = pos["latitude"]
+    lat_ref = b"N" if lat_val >= 0 else b"S" # Notez le 'b' devant la chaîne
+
+    abs_lat = abs(lat_val)
+    lat_deg = int(abs_lat)
+    lat_min_float = (abs_lat - lat_deg) * 60
+    lat_min = int(lat_min_float)
+    lat_sec = int(round((lat_min_float - lat_min) * 60 * 100)) # Stocké x100 pour garder 2 décimales
+
+    # Tuple final : ((degrés, 1), (minutes, 1), (secondes*100, 100))
+    lat_tuple = ((lat_deg, 1), (lat_min, 1), (lat_sec, 100))
+
+
+    # --- Conversion pour la LONGITUDE ---
+    lon_val = pos["longitude"]
+    lon_ref = b"E" if lon_val >= 0 else b"W" # Notez le 'b' devant la chaîne
+
+    abs_lon = abs(lon_val)
+    lon_deg = int(abs_lon)
+    lon_min_float = (abs_lon - lon_deg) * 60
+    lon_min = int(lon_min_float)
+    lon_sec = int(round((lon_min_float - lon_min) * 60 * 100))
+
+    lon_tuple = ((lon_deg, 1), (lon_min, 1), (lon_sec, 100))
+
+
+    # --- Application dans le dictionnaire piexif ---
+    # exif_dict["GPS"][piexif.GPSIFD.GPSVersionID] = (2, 2, 0, 0) # Optionnel mais recommandé
+    exif_dict["GPS"][piexif.GPSIFD.GPSLatitudeRef] = lat_ref
+    exif_dict["GPS"][piexif.GPSIFD.GPSLatitude] = lat_tuple
+    exif_dict["GPS"][piexif.GPSIFD.GPSLongitudeRef] = lon_ref
+    exif_dict["GPS"][piexif.GPSIFD.GPSLongitude] = lon_tuple
+
+    exif_bytes = piexif.dump(exif_dict)
+
+    try :
+        piexif.insert(exif_bytes, pict_path)
+    except ValueError as e:
+        print(e)
+        return False
+
+    return True
+
+def remove_position(picture: str):
+    """
+    Removes the location of picture
+    """
+
+    pict_path = get_pict_path(picture)
+
+    exif_dict = piexif.load(pict_path)
+
+    exif_dict.pop("GPS", None)
+
+    exif_bytes = piexif.dump(exif_dict)
+    piexif.insert(exif_bytes, pict_path)
+
+
 

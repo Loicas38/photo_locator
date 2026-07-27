@@ -1,5 +1,7 @@
 import streamlit as st
-from from_trace import *
+from pictures_management import *
+from gpx_management import *
+from pos_management import *
 import pandas as pd
 import pydeck as pdk
 from pydeck.data_utils import compute_view
@@ -26,9 +28,17 @@ class Display():
 
 
     def home_page(self):
-        st.title("Welcome on photo locator !")
+        st.set_page_config(
+            layout="wide",
+            page_icon=":material/add_location:",
+            initial_sidebar_state="collapsed"
+        )
 
-        st.text("Let's start editing your photos' location. Choose what you want to do.")
+        st.title("Welcome on photo locator !")
+        st.text("With this app, you will be able to manage the location of your pictures, by importing" \
+        "it from a gpx file or editing it manually. You will also be able to display it on a map !" \
+        "For more functionality, explore the settings !")
+        st.text("Choose what you want to do first !")
 
         with st.container(horizontal=True, horizontal_alignment="distribute"):
             if st.button(label="Manual editing", icon=":material/edit:"):
@@ -48,6 +58,12 @@ class Display():
 
             if st.button(label="Settings", icon=":material/settings:"):
                 st.switch_page(self.pages["settings"])
+
+        st.space("large")
+
+        picts = get_all_pictures()
+        self.display_pictures_in_grid([get_pict_path(p) for p in picts])
+
 
     def picture_management(self):
         st.title("Picture management")
@@ -105,6 +121,10 @@ class Display():
             )
     
     def gpx_management(self):
+        st.set_page_config(
+            layout="wide"
+        )
+
         st.title("Manage GPX files")
 
         st.header("Current gpx files :")
@@ -124,6 +144,25 @@ class Display():
             st.switch_page(self.pages["gpx_upload"])
 
 
+        st.space(size="medium")
+        st.header("Display gpx files")
+
+        left, right = st.columns([.3, .7], gap="medium",
+                         vertical_alignment="center")
+        
+        to_display = left.multiselect(
+            label="Choose the files you want to display",
+            key="chose_display_gpx",
+            options=get_all_gpxs_files(),
+            persist_state="page"
+        )
+
+
+        html_map = make_map(to_display)
+
+        right.iframe(html_map, height=600)
+
+        st.space(size="medium")
         st.header("Remove gpx files")
 
         to_delete = st.multiselect(
@@ -141,13 +180,24 @@ class Display():
                 st.write("Done !")
 
     def location_display(self):
+        st.set_page_config(
+            layout="wide"
+        )
+
         st.title("Location of your pictures")
+
+        def format_lat_long(val):
+            if val is None:
+                return val
+            else:
+                return f"{val:.3f}"
         
         data = get_picts_details()
         loc_data = {
             "files": data["files"],
             "Latitude": data["Latitude"],
-            "Longitude": data["Longitude"]
+            "Longitude": data["Longitude"],
+            "tooltip_text": [f"{data['files'][i]}\n({format_lat_long(data['Longitude'][i])}, {format_lat_long(data['Latitude'][i])})" for i in range(len(data['files']))]
         }
         p = pd.DataFrame(loc_data)
         # line by gemini, see if relevant TODO
@@ -182,6 +232,7 @@ class Display():
                 bearing=0, 
                 pitch=0
             )
+
         elif len(p["Longitude"]) == 0:
             view = view = pdk.ViewState(
                 longitude=2.8, 
@@ -198,104 +249,105 @@ class Display():
             )
             view.zoom -= 1
 
-        
-        # TODO : make the Longitude and latitude display have only 2 or thre decimal digits
         deck = pdk.Deck(
             [pictures_layer],
             initial_view_state=view,
-            tooltip={"text": "{files}\n({Longitude}, {Latitude})"},
+            tooltip={"text": "{tooltip_text}"},
             map_style=pdk.map_styles.CARTO_LIGHT
         )
 
-        st.pydeck_chart(deck)
+        st.pydeck_chart(deck, height=800)
 
         with st.expander(label="Pictures gallery", expanded=False):
-            picts = get_picts_details()
-            paths = [get_pict_path(p) for p in picts["files"]]
-            captions = [f"{picts["files"][i]} at {picts["Time"][i]}, lat : {picts["Latitude"][i]}, long : {picts["Longitude"][i]}" for i in range(len(picts["files"]))]
+            paths = [get_pict_path(p) for p in data["files"]]
+            captions = [f"{data["files"][i]} @ {data["Time"][i]}  \nlat : {format_lat_long(data["Latitude"][i])}, long : {format_lat_long(data["Longitude"][i])}" for i in range(len(data["files"]))]
 
-            st.image(paths, caption=captions)
+            self.display_pictures_in_grid(paths, captions)
 
     
     def manual_editing(self):
-        st.title("Manual editing")
-
-        to_edit = st.multiselect(
-            label="Choose the pictures you want to edit",
-            key=3,
-            options=get_all_pictures(),
-            persist_state="page"
+        st.set_page_config(
+            layout="wide"
         )
+
+        st.title("Manual editing")
 
         DEFAULT_LATITUDE = 48.85
         DEFAULT_LONGITUDE = 2.37
 
-        st.header("Choose the position manually ...")
+        if "chosen_lat" not in st.session_state:
+            st.session_state["chosen_lat"] = DEFAULT_LATITUDE
+            st.session_state["chosen_long"] = DEFAULT_LONGITUDE
 
-        with st.container(horizontal=True, horizontal_alignment="distribute"):
-            form_lat = st.number_input(
-                label = "Latitude",
-                min_value=-90.0,
-                max_value=90.0,
-                value=DEFAULT_LATITUDE,
-                step=0.01,
-                key=4,
+        st.space("medium")
+
+        left, right = st.columns(2, gap="medium")
+
+        with right:
+            st.header("Or select the position on the map !")
+
+            m = folium.Map(location=[st.session_state.chosen_lat, st.session_state.chosen_long], zoom_start=10)
+            folium.Marker(
+                (st.session_state.chosen_lat, st.session_state.chosen_long),
+                icon=folium.Icon(color="blue", icon="edit")
+            ).add_to(m)
+
+            # The code below will be responsible for displaying 
+            # the popup with the latitude and longitude shown
+            m.add_child(folium.LatLngPopup())
+
+            f_map = st_folium(m, width=750)
+
+            with st.container(horizontal=True, horizontal_alignment="center"):
+                if st.button("Choose this position"):
+                    if f_map.get("last_clicked"):
+                        st.session_state["chosen_lat"] = f_map["last_clicked"]["lat"]
+                        st.session_state["chosen_long"] = f_map["last_clicked"]["lng"]
+
+                        st.switch_page(self.pages["manual"])
+
+
+        with left:
+
+            st.header("Pictures to edit")
+
+            to_edit = st.multiselect(
+                label="Choose the pictures you want to edit",
+                key=3,
+                options=get_all_pictures(),
                 persist_state="page"
             )
 
-            form_long = st.number_input(
-                label = "Longitude",
-                min_value=-90.0,
-                max_value=90.0,
-                value=DEFAULT_LONGITUDE,
-                step=0.01,
-                key=5,
-                persist_state="page"
-            )
+            st.space("medium")
 
-        st.map(
-            data={
-                "Latitude": [form_lat],
-                "Longitude": [form_long]
-            },
-            latitude="Latitude",
-            longitude="Longitude"
-        )
+            st.header("Choose the position manually ...")
 
-        if st.button(label="Apply the position chosen manually", help="Warning : this can't be undone", icon=":material/edit:"):
-            self.add_position(to_edit, {"latitude": form_lat, "longitude":form_long})
+            with st.empty():
+                with st.container(horizontal=True, horizontal_alignment="distribute"):
+                    st.number_input(
+                        label = "Latitude",
+                        min_value=-90.0,
+                        max_value=90.0,
+                        step=0.01,
+                        key="chosen_lat",
+                        persist_state="page"
+                    )
 
-        st.header("Or select the position on the map !")
+                    st.number_input(
+                        label = "Longitude",
+                        min_value=-90.0,
+                        max_value=90.0,
+                        step=0.01,
+                        key="chosen_long",
+                        persist_state="page"
+                    )
 
+            st.space(size="medium")
 
-        m = folium.Map(location=[DEFAULT_LATITUDE, DEFAULT_LONGITUDE], zoom_start=10)
+            with st.container(horizontal=True, horizontal_alignment="center"):
+                if st.button(label="Apply the chosen position to the chosen pictures", help="Warning : this can't be undone. Make sure it's the good location.", icon=":material/edit:"):
+                    self.add_position(to_edit, {"latitude": st.session_state.chosen_lat, "longitude":st.session_state.chosen_long})
 
-        # The code below will be responsible for displaying 
-        # the popup with the latitude and longitude shown
-        m.add_child(folium.LatLngPopup())
-
-        f_map = st_folium(m, width=725)
-
-        map_lat = DEFAULT_LATITUDE
-        map_long = DEFAULT_LONGITUDE
-
-        if f_map.get("last_clicked"):
-            selected_latitude = f_map["last_clicked"]["lat"]
-            selected_longitude = f_map["last_clicked"]["lng"]
-
-        with st.container(horizontal=True, horizontal_alignment="center"):
-            form = st.form("Position entry form", border=False, width="content")
-
-            submit = form.form_submit_button(label="Choose this position")
-
-        if submit:
-            if selected_latitude == DEFAULT_LATITUDE and selected_longitude == DEFAULT_LONGITUDE:
-                st.warning("Selected position has default values!")
-            st.success(f"Stored position: {selected_latitude:.4f}, {selected_longitude:.4f}")
-
-
-        if st.button(label="Apply the position chosen on the map", help="Warning : this can't be undone", icon=":material/map:"):
-            self.add_position(to_edit, {"latitude": map_lat, "longitude":map_long})
 
     def edit_from_gpx(self):
         st.title("Add location using gpx files")
@@ -507,7 +559,10 @@ class Display():
             st.error("All pictures failed to be editted")
             return
 
-        st.success(f"Done, with {len(failed)} uneditted pictures.")
+        if len(failed) != 0:
+            st.success(f"Done, with {len(failed)} uneditted pictures.")
+        else:
+            st.success(f"Done with no error !")
 
         if len(failed) > 0:
             with st.expander(label="Failled pictures :", expanded=False):
@@ -568,7 +623,28 @@ class Display():
             
             st.dataframe(pict_data)
 
+    
+    def display_pictures_in_grid(self, pictures, captions=None):
 
+        if "NB_PICTS_BY_LINE" not in st.session_state:
+            st.session_state["NB_PICTS_BY_LINE"] = 5
+
+        st.select_slider(
+            "Number of columns", 
+            options=[x for x in range(1, 11)],
+            key="NB_PICTS_BY_LINE",
+            on_change=store_settings,
+            value=5
+        )
+
+        cols = st.columns(st.session_state.NB_PICTS_BY_LINE)
+
+        for i in range(len(pictures)):
+            with cols[i%st.session_state.NB_PICTS_BY_LINE]:
+                if captions != None:
+                    st.image(pictures[i], caption=captions[i])
+                else:
+                    st.image(pictures[i])
 
 
 if __name__ == "__main__":

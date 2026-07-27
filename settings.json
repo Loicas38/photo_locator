@@ -16,5 +16,6 @@
     "PICTURE_FORMATS": [
         ".JPG",
         ".jpg"
-    ]
+    ],
+    "NB_PICTS_BY_LINE": 5
 }
